@@ -296,6 +296,16 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       arg0 = modify_desc(arg0, CIPAE_NSE_BIT, 1, 1);
       cmo_cipae(arg0);
       break;
+    case RME_READ_CNTPCT:
+      uint64_t low = mmio_read_32(arg0 + CNTPCT_LOWER);
+      uint64_t high = mmio_read_32(arg0 + CNTPCT_HIGHER);
+      uint64_t full = (high << 32) | low;
+      INFO("EL3: RME READ CNTPCT: CNTPCT = 0x%llx\n", full);
+      return full;
+    case RME_READ_CNTID:
+      uint32_t cntid = mmio_read_32(arg0);
+      INFO("EL3: RME READ CNTID: CNTID = 0x%x\n", cntid);
+      return cntid;
     default:
       if (mapped) {
         shared_data->status_code = 0xFFFFFFFF;

@@ -42,6 +42,11 @@
 #define RME_PGT_DESTROY 0x12
 #define MEC_SERVICE 0x13
 #define RME_CMO_POE 0x14
+#define RME_READ_CNTPCT  0x15
+#define RME_READ_CNTID   0x16
+#define CNTPCT_LOWER     0x00
+#define CNTPCT_HIGHER    0x04
+#define CNTID_OFFSET     0x1C
 
 /* General Defines used by tests */
 #define INIT_DATA   0x11

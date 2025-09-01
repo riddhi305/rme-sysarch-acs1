@@ -351,6 +351,11 @@ read_id_aa64mmfr3_el1:
        mrs    x0,  id_aa64mmfr3_el1
        ret
 
+// Read the ID_AA64MMFR2_EL1 system register
+read_id_aa64mmfr3_el1:
+       mrs    x0,  id_aa64mmfr2_el1
+       ret
+
 // Read the MECID_RL_A_EL3 system register
 read_mecid_rl_a_el3:
        mrs    x0, mecid_rl_a_el3

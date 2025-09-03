@@ -15,6 +15,7 @@
   * limitations under the License.
   **/
 
+#include <lib/mmio.h>   // for mmio_read_32
 #include <val_el3/ack_include.h>
 
 #define TEST_DATA 0x999
@@ -296,16 +297,43 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       arg0 = modify_desc(arg0, CIPAE_NSE_BIT, 1, 1);
       cmo_cipae(arg0);
       break;
-    case RME_READ_CNTPCT:
-      uint64_t low = mmio_read_32(arg0 + CNTPCT_LOWER);
-      uint64_t high = mmio_read_32(arg0 + CNTPCT_HIGHER);
-      uint64_t full = (high << 32) | low;
-      INFO("EL3: RME READ CNTPCT: CNTPCT = 0x%llx\n", full);
-      return full;
-    case RME_READ_CNTID:
-      uint32_t cntid = mmio_read_32(arg0);
+    case RME_READ_CNTPCT: 
+      /* arg0: base address of the counter block
+       * Writes 64-bit CNTPCT to *(uint64_t *)arg1
+       */
+      uint32_t low  = mmio_read_32((uintptr_t)arg0 + CNTPCT_LOWER);
+      uint32_t high = mmio_read_32((uintptr_t)arg0 + CNTPCT_HIGHER);
+      uint64_t full = ((uint64_t)high << 32) | low;
+      INFO("EL3: RME READ CNTPCT: CNTPCT = 0x%lx (hi=0x%08x lo=0x%08x)\n",
+           (unsigned long)full, high, low);
+      if (arg1) {
+        *(volatile uint64_t *)(uintptr_t)arg1 = full;
+      } else if (mapped) {
+        shared_data->status_code = 2;
+        const char *msg = "EL3: CNTPCT requires arg1 (uint64_t*)";
+        int i = 0; while (msg[i] && i < sizeof(shared_data->error_msg) - 1) {
+          shared_data->error_msg[i] = msg[i]; i++;
+        }
+        shared_data->error_msg[i] = '\0';
+      }
+      break;
+    case RME_READ_CNTID: 
+      /* arg0: address of CNTID register
+       * Writes 32-bit CNTID to *(uint32_t *)arg1
+       */
+      uint32_t cntid = mmio_read_32((uintptr_t)arg0);
       INFO("EL3: RME READ CNTID: CNTID = 0x%x\n", cntid);
-      return cntid;
+      if (arg1) {
+        *(volatile uint32_t *)(uintptr_t)arg1 = cntid;
+      } else if (mapped) {
+        shared_data->status_code = 2;
+        const char *msg = "EL3: CNTID requires arg1 (uint32_t*)";
+        int i = 0; while (msg[i] && i < sizeof(shared_data->error_msg) - 1) {
+          shared_data->error_msg[i] = msg[i]; i++;
+        }
+        shared_data->error_msg[i] = '\0';
+      }
+      break;
     default:
       if (mapped) {
         shared_data->status_code = 0xFFFFFFFF;

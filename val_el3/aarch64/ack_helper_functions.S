@@ -72,6 +72,8 @@
         .globl read_id_aa64mmfr3_el1
         .globl write_mecid_rl_a_el3
         .globl read_mecid_rl_a_el3
+        .globl smc_set_retval_u64
+        .globl smc_set_retval_u32
 
         /* @brief  The function is called to prepare the ack_handler entry installed in
          *         vbar_el3 by saving 10 GPRs and SP_EL3 in SP_EL0 which is programmed
@@ -352,7 +354,7 @@ read_id_aa64mmfr3_el1:
        ret
 
 // Read the ID_AA64MMFR2_EL1 system register
-read_id_aa64mmfr3_el1:
+read_id_aa64mmfr2_el1:
        mrs    x0,  id_aa64mmfr2_el1
        ret
 
@@ -455,13 +457,24 @@ val_mmio_write64_el3:
 // MMIO Read (64-bit)
 val_mmio_read64_el3:
     dsb ld             // Data Synchronization Barrier before read
-    ldr w0, [x0]       // Load 64-bit value from address (x0) into w0
+    ldr x0, [x0]       // Load 64-bit value from address (x0) into w0
     dsb ld             // Ensure read is completed
     ret
 
 // Data Synchronization Barrier Across the system
 mem_barrier:
     dsb sy
+    ret
+
+// --- SMC return helpers ---
+// Set 64-bit return value in x0 and return to C.
+smc_set_retval_u64:    
+// AAPCS64: x0 already holds the argument; returning keeps it in x0
+    ret
+
+// Set 32-bit return value in x0 (zero-extended) and return to C.
+smc_set_retval_u32:
+    uxtw    x0, w0
     ret
 
 /* @brief  This function is called to branch to firmware

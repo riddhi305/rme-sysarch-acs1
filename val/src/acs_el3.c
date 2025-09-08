@@ -708,3 +708,40 @@ uint32_t val_smmu_rlm_configure_mecid(smmu_master_attributes_t *smmu_attr, uint3
     return 0;
   }
 }
+
+uint32_t
+val_read_cntpct_el3(uint64_t cnt_base_n, uint64_t *out)
+{
+  UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+
+  // Follow your “secondary PE” fast-path convention
+  if (val_pe_get_index_mpid(val_pe_get_mpid()) != 0)
+      return shared_data->status_code ? 1 : 0;
+
+  if (shared_data->status_code != 0) {
+    val_print(ACS_PRINT_ERR, shared_data->error_msg, 0);
+    return 1;
+  }
+
+  if (out) *out = shared_data->shared_data_access[0].data;  // 64-bit
+  val_print(ACS_PRINT_INFO, " EL3: CNTPCT read successful", 0);
+  return 0;
+}
+
+uint32_t
+val_read_cntid_el3(uint64_t cntid_addr, uint32_t *out)
+{
+  UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTID, cntid_addr, 0, 0);
+
+  if (val_pe_get_index_mpid(val_pe_get_mpid()) != 0)
+      return shared_data->status_code ? 1 : 0;
+
+  if (shared_data->status_code != 0) {
+    val_print(ACS_PRINT_ERR, shared_data->error_msg, 0);
+    return 1;
+  }
+
+  if (out) *out = (uint32_t)shared_data->shared_data_access[0].data;  // 32-bit
+  val_print(ACS_PRINT_INFO, " EL3: CNTID read successful", 0);
+  return 0;
+}

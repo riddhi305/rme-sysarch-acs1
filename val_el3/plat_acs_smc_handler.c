@@ -298,42 +298,41 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       cmo_cipae(arg0);
       break;
     case RME_READ_CNTPCT: 
-      /* arg0: base address of the counter block
-       * Writes 64-bit CNTPCT to *(uint64_t *)arg1
-       */
-      uint32_t low  = mmio_read_32((uintptr_t)arg0 + CNTPCT_LOWER);
-      uint32_t high = mmio_read_32((uintptr_t)arg0 + CNTPCT_HIGHER);
-      uint64_t full = ((uint64_t)high << 32) | low;
-      INFO("EL3: RME READ CNTPCT: CNTPCT = 0x%lx (hi=0x%08x lo=0x%08x)\n",
-           (unsigned long)full, high, low);
-      // if (arg1) {
-      //   *(volatile uint64_t *)(uintptr_t)arg1 = full;
-      // } else if (mapped) {
-      //   shared_data->status_code = 2;
-      //   const char *msg = "EL3: CNTPCT requires arg1 (uint64_t*)";
-      //   int i = 0; while (msg[i] && i < sizeof(shared_data->error_msg) - 1) {
-      //     shared_data->error_msg[i] = msg[i]; i++;
-      //   }
-      //   shared_data->error_msg[i] = '\0';
-      // }
+    /* arg0: base address of the counter block (secure/non-secure system counter frame)
+     * Result: 64-bit CNTPCT placed in shared_data->shared_data_access[0].data
+     * Robust hi/lo/hi sequence to avoid 32-bit rollover between reads.
+     */
+      uintptr_t base = (uintptr_t)arg0;
+      uint32_t hi1 = mmio_read_32(base + CNTPCT_HIGHER);
+      uint32_t lo  = mmio_read_32(base + CNTPCT_LOWER);
+      uint32_t hi2 = mmio_read_32(base + CNTPCT_HIGHER);
+      uint64_t full;
+      if (hi1 == hi2) {
+        full = ((uint64_t)hi1 << 32) | lo;
+      } else {
+        uint32_t lo2 = mmio_read_32(base + CNTPCT_LOWER);
+        full = ((uint64_t)hi2 << 32) | lo2;
+      }
+      INFO("EL3: RME READ CNTPCT: 0x%lx\n", (unsigned long)full);
+      if (mapped) {
+        shared_data->shared_data_access[0].data = full;
+        shared_data->status_code = 0;
+        shared_data->error_code = 0;
+        shared_data->error_msg[0] = '\0';
+      }
       break;
-    case RME_READ_CNTID: 
-      /* arg0: address of CNTID register
-       * Writes 32-bit CNTID to *(uint32_t *)arg1
-       */
+    case RME_READ_CNTID:
+      /* arg0: address of secure CNTID register (CNTCTL base + CNTID offset)
+       * Result: 32-bit CNTID placed in shared_data->shared_data_access[0].data
+      */
       uint32_t cntid = mmio_read_32((uintptr_t)arg0);
-      INFO("EL3: RME READ CNTID: CNTID = 0x%x\n", cntid);
-      shared_data->shared_data_access[0].data=cntid;
-      // if (arg1) {
-      //   *(volatile uint32_t *)(uintptr_t)arg1 = cntid;
-      // } else if (mapped) {
-      //   shared_data->status_code = 2;
-      //   const char *msg = "EL3: CNTID requires arg1 (uint32_t*)";
-      //   int i = 0; while (msg[i] && i < sizeof(shared_data->error_msg) - 1) {
-      //     shared_data->error_msg[i] = msg[i]; i++;
-      //   }
-      //   shared_data->error_msg[i] = '\0';
-      // }
+      INFO("EL3: RME READ CNTID: 0x%x\n", cntid);
+      if (mapped) {
+        shared_data->shared_data_access[0].data = (uint64_t)cntid; // store as u64
+        shared_data->status_code = 0;
+        shared_data->error_code = 0;
+        shared_data->error_msg[0] = '\0';
+      }
       break;
     default:
       if (mapped) {

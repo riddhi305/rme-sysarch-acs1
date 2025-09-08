@@ -53,5 +53,6 @@ void val_platform_timer_get_entry_index(uint64_t instance, uint32_t *block, uint
 uint64_t val_get_phy_el2_timer_count(void);
 uint64_t val_get_phy_el1_timer_count(void);
 uint64_t val_get_counter_frequency(void);
+uint32_t t01_entry(void);
 
 #endif // __RME_ACS_TIMER_H__

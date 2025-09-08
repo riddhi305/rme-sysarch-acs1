@@ -297,11 +297,11 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       arg0 = modify_desc(arg0, CIPAE_NSE_BIT, 1, 1);
       cmo_cipae(arg0);
       break;
-    case RME_READ_CNTPCT: 
-    /* arg0: base address of the counter block (secure/non-secure system counter frame)
-     * Result: 64-bit CNTPCT placed in shared_data->shared_data_access[0].data
-     * Robust hi/lo/hi sequence to avoid 32-bit rollover between reads.
-     */
+      case RME_READ_CNTPCT: 
+      /* arg0: base address of the counter block (system counter frame)
+       * Result: 64-bit CNTPCT stored in shared_data->shared_data_access[0].data
+       * Robust hi/lo/hi sequence to avoid rollover.
+       */
       uintptr_t base = (uintptr_t)arg0;
       uint32_t hi1 = mmio_read_32(base + CNTPCT_HIGHER);
       uint32_t lo  = mmio_read_32(base + CNTPCT_LOWER);
@@ -321,10 +321,10 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
         shared_data->error_msg[0] = '\0';
       }
       break;
-    case RME_READ_CNTID:
+    case RME_READ_CNTID: {
       /* arg0: address of secure CNTID register (CNTCTL base + CNTID offset)
-       * Result: 32-bit CNTID placed in shared_data->shared_data_access[0].data
-      */
+       * Result: 32-bit CNTID stored in shared_data->shared_data_access[0].data
+       */
       uint32_t cntid = mmio_read_32((uintptr_t)arg0);
       INFO("EL3: RME READ CNTID: 0x%x\n", cntid);
       if (mapped) {

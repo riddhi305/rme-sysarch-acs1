@@ -1,7 +1,8 @@
-/* The architecture of the system counter of the Generic Timer mandates that the counter must be at least 56
- * bits, and at most 64 bits. From Armv8.4, for systems that implement counter scaling, the minimum becomes
- * 64 bits.
- */
+/*The architecture of the system counter of the Generic Timer mandates that the counter must be at least 56
+bits, and at most 64 bits. From Armv8.4, for systems that implement counter scaling, the minimum becomes
+64 bits.*/
+
+#include <stdbool.h>
 
 #include "val/include/rme_acs_val.h"
 #include "val/include/val_interface.h"
@@ -43,9 +44,9 @@ get_arch_version(void)
 }
 
 /* Robust MMIO read of 64-bit CNTPCT using hi/lo/hi pattern */
-static
+static inline
 uint64_t
-mmio_read_cntpct(uint64_t cnt_base_n)
+mmio_read_cntpct_robust(uint64_t cnt_base_n)
 {
     uint32_t hi1 = val_mmio_read(cnt_base_n + CNTPCT_HIGHER);
     uint32_t lo  = val_mmio_read(cnt_base_n + CNTPCT_LOWER);
@@ -66,7 +67,7 @@ payload(void)
 {
     uint32_t pe_index = val_pe_get_index_mpid(val_pe_get_mpid());
     uint32_t timer_num = val_timer_get_info(TIMER_INFO_NUM_PLATFORM_TIMERS, 0);
-    
+
     if (!timer_num) {
         val_set_status(pe_index, "SKIP", 1);
         return;
@@ -76,47 +77,58 @@ payload(void)
 
         uint64_t cnt_base_n   = val_timer_get_info(TIMER_INFO_SYS_CNT_BASE_N, timer_num);
         uint64_t cnt_ctl_base = val_timer_get_info(TIMER_INFO_SYS_CNTL_BASE,  timer_num);
-        bool is_secure_timer =
+        bool     is_secure_timer =
             val_timer_get_info(TIMER_INFO_IS_PLATFORM_TIMER_SECURE, timer_num);
 
         if ((cnt_base_n == 0) || (cnt_ctl_base == 0)) {
-            val_print(ACS_PRINT_WARN,
-                      "\n       Timer[%d]: Invalid CNT_BASE or CNT_CTL base", timer_num);
+            val_print(ACS_PRINT_WARN, "\n       Timer: Invalid CNT_BASE or CNT_CTL base", 0);
+            val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
             continue;
         }
 
         uint64_t counter_val = 0;
-        /* Try direct MMIO if non-secure and allowed; else use EL3 SMC helper */
+
+        /* Non-secure & allowed: read via MMIO directly; else use SMC */
         if (!is_secure_timer &&
             val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
-                counter_val = mmio_read_cntpct(cnt_base_n);
+
+            counter_val = mmio_read_cntpct_robust(cnt_base_n);
+
         } else {
-            /* Secure or inaccessible from NS: read via EL3 SMC helper */
-            if (val_read_cntpct_el3(cnt_base_n, &counter_val) != 0) {
-                val_print(ACS_PRINT_WARN,
-                          "\n       Timer[%d]: CNTPCT SMC read failed (%s)",
-                          timer_num, shared_data->error_msg);
+            /* Secure/inaccessible: read via SMC; EL3 writes result into shared_data */
+            (void)UserSMCCall(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+
+            if (shared_data->status_code != 0) {
+                val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed", 0);
+                val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
                 continue;
             }
+
+            counter_val = shared_data->shared_data_access[0].data;
         }
 
         uint8_t  width = get_effective_bit_width(counter_val);
         uint32_t arch_version = get_arch_version();
 
-        /* Read CNTID via EL3 SMC helper (secure-only register in CNTCTL frame) */
-        uint32_t cntid_val = 0;
-        if (val_read_cntid_el3(cnt_ctl_base + CNTID_OFFSET, &cntid_val) != 0) {
-            val_print(ACS_PRINT_WARN,
-                      "\n       Timer[%d]: CNTID SMC read failed (%s)",
-                      timer_num, shared_data->error_msg);
+        /* CNTID (secure-only): always go through SMC; EL3 writes result into shared_data */
+        (void)UserSMCCall(ARM_ACS_SMC_FID,
+                          RME_READ_CNTID,
+                          cnt_ctl_base + CNTID_OFFSET,
+                          0, 0);
+
+        if (shared_data->status_code != 0) {
+            val_print(ACS_PRINT_WARN, "\n       CNTID SMC read failed", 0);
+            val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
             continue;
         }
 
-        bool scaling_enabled = ((cntid_val & 0xF) != 0);
+        uint32_t cntid_val = (uint32_t)shared_data->shared_data_access[0].data;
+        bool     scaling_enabled = ((cntid_val & 0xF) != 0);
 
-        val_print(ACS_PRINT_DEBUG,
-                  "\n       Timer[%d]: width = %d bits, scaling=%d",
-                  timer_num, width, scaling_enabled);
+        /* Debug (one datum per call) */
+        val_print(ACS_PRINT_DEBUG, "\n       Timer index: %d", timer_num);
+        val_print(ACS_PRINT_DEBUG, "       width (bits): %d", width);
+        val_print(ACS_PRINT_DEBUG, "       scaling_enabled: %d", scaling_enabled);
 
         if (width > MAX_WIDTH) {
             val_print(ACS_PRINT_ERR, "\n       Counter width exceeds 64 bits", 0);

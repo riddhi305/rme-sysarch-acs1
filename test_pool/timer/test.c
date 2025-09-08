@@ -96,7 +96,7 @@ payload(void)
 
         } else {
             /* Secure/inaccessible: read via SMC; EL3 writes result into shared_data */
-            (void)UserSMCCall(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+            UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
 
             if (shared_data->status_code != 0) {
                 val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed", 0);
@@ -111,7 +111,7 @@ payload(void)
         uint32_t arch_version = get_arch_version();
 
         /* CNTID (secure-only): always go through SMC; EL3 writes result into shared_data */
-        (void)UserSMCCall(ARM_ACS_SMC_FID,
+        UserCallSMC(ARM_ACS_SMC_FID,
                           RME_READ_CNTID,
                           cnt_ctl_base + CNTID_OFFSET,
                           0, 0);

@@ -101,7 +101,7 @@
   ../test_pool/rme/rme_system_reset_propagation_to_all_pe.c
   ../test_pool/smmu/smmu_implements_rme.c
   ../test_pool/smmu/smmu_responds_to_gpt_tlb.c
-  
+  ../test_pool/timer/test.c
 
 [Packages]
   StdLib/StdLib.dec

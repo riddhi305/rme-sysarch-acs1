@@ -419,6 +419,7 @@ ShellAppMainrme (
         else if (StrCmp(next, L"dpt") == 0)    g_enable_module |= (1 << 4);
         else if (StrCmp(next, L"mec") == 0)    g_enable_module |= (1 << 5);
         else if (StrCmp(next, L"ls") == 0)     g_enable_module |= (1 << 6);
+        else if (StrCmp(next, L"timer") == 0)  g_enable_module |= (1 << 7);
 
         next = token + 1; // Move past the comma
       }
@@ -432,6 +433,7 @@ ShellAppMainrme (
         else if (StrCmp(next, L"dpt") == 0)    g_enable_module |= (1 << 4);
         else if (StrCmp(next, L"mec") == 0)    g_enable_module |= (1 << 5);
         else if (StrCmp(next, L"ls") == 0)     g_enable_module |= (1 << 6);
+        else if (StrCmp(next, L"timer") == 0)  g_enable_module |= (1 << 7);
       }
   } else {
     g_print_level = G_PRINT_LEVEL;
@@ -638,19 +640,19 @@ if (CmdLineArg != NULL) {
   if (Status)
     return Status;
 
-  // Status |= val_rme_execute_tests(val_pe_get_num());
+  Status |= val_rme_execute_tests(val_pe_get_num());
 
-  // Status |= val_legacy_execute_tests(val_pe_get_num());
+  Status |= val_legacy_execute_tests(val_pe_get_num());
 
-  // Status |= val_gic_execute_tests(val_pe_get_num());
+  Status |= val_gic_execute_tests(val_pe_get_num());
 
-  // Status |= val_smmu_execute_tests(val_pe_get_num());
+  Status |= val_smmu_execute_tests(val_pe_get_num());
 
-  // Status |= val_rme_da_execute_tests(val_pe_get_num());
+  Status |= val_rme_da_execute_tests(val_pe_get_num());
 
-  // Status |= val_rme_dpt_execute_tests(val_pe_get_num());
+  Status |= val_rme_dpt_execute_tests(val_pe_get_num());
 
-  // Status |= val_rme_mec_execute_tests(val_pe_get_num());
+  Status |= val_rme_mec_execute_tests(val_pe_get_num());
 
   Status |= val_timer_execute_tests(val_pe_get_num());
 

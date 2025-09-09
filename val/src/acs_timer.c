@@ -383,7 +383,7 @@ val_timer_execute_tests(uint32_t num_pe)
   val_print(ACS_PRINT_ALWAYS,     "******************************************************* \n", 0);
 
   /* TIME_01: System counter bit-width validation */
-  status |= t01_entry();
+  status = t01_entry();
 
   return status;
 }

@@ -321,7 +321,7 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
         shared_data->error_msg[0] = '\0';
       }
       break;
-    case RME_READ_CNTID: {
+    case RME_READ_CNTID: 
       /* arg0: address of secure CNTID register (CNTCTL base + CNTID offset)
        * Result: 32-bit CNTID stored in shared_data->shared_data_access[0].data
        */

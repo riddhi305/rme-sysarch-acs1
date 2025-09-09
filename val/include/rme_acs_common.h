@@ -31,6 +31,7 @@
 #define MEC_MODULE       "mec"
 #define RME_MODULE       "rme"
 #define SMMU_MODULE      "smmu"
+#define TIMER_MODULE     "timer"
 
 #define CPU_NUM_BIT  32
 #define CPU_NUM_MASK 0xFFFFFFFF
@@ -94,7 +95,8 @@ typedef enum {
     DA_MODULE_ID,
     DPT_MODULE_ID,
     MEC_MODULE_ID,
-    LEGACY_MODULE_ID
+    LEGACY_MODULE_ID,
+    TIMER_MODULE_ID,
 } MODULE_ID_e;
 
 #endif

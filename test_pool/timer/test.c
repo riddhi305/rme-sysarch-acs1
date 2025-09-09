@@ -66,7 +66,9 @@ void
 payload(void)
 {
     uint32_t pe_index = val_pe_get_index_mpid(val_pe_get_mpid());
+    val_print(ACS_PRINT_WARN, "       PE index: %d", pe_index);
     uint32_t timer_num = val_timer_get_info(TIMER_INFO_NUM_PLATFORM_TIMERS, 0);
+    val_print(ACS_PRINT_WARN, "       Timer Index: %d", timer_num);
 
     if (!timer_num) {
         val_set_status(pe_index, "SKIP", 1);
@@ -76,7 +78,9 @@ payload(void)
     while (timer_num--) {
 
         uint64_t cnt_base_n   = val_timer_get_info(TIMER_INFO_SYS_CNT_BASE_N, timer_num);
+        val_print(ACS_PRINT_WARN, "       CNT BASE: %d", cnt_base_n);
         uint64_t cnt_ctl_base = val_timer_get_info(TIMER_INFO_SYS_CNTL_BASE,  timer_num);
+        val_print(ACS_PRINT_WARN, "       CNT CTL BASE: %d", cnt_ctl_base);
         bool     is_secure_timer =
             val_timer_get_info(TIMER_INFO_IS_PLATFORM_TIMER_SECURE, timer_num);
 
@@ -125,7 +129,6 @@ payload(void)
         uint32_t cntid_val = (uint32_t)shared_data->shared_data_access[0].data;
         bool     scaling_enabled = ((cntid_val & 0xF) != 0);
 
-        /* Debug (one datum per call) */
         val_print(ACS_PRINT_DEBUG, "\n       Timer index: %d", timer_num);
         val_print(ACS_PRINT_DEBUG, "       width (bits): %d", width);
         val_print(ACS_PRINT_DEBUG, "       scaling_enabled: %d", scaling_enabled);

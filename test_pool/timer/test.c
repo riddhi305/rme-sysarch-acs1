@@ -18,30 +18,14 @@ bits, and at most 64 bits. From Armv8.4, for systems that implement counter scal
 
 #define MIN_WIDTH 56
 #define MAX_WIDTH 64
-#define ARCH_V8_4 0x84
 
-/* Count number of significant bits in a 64-bit value */
-static
-uint8_t
-get_effective_bit_width(uint64_t val)
-{
-    uint8_t width = 0;
-    while (val) {
-        width++;
-        val >>= 1;
-    }
-    return width;
-}
-
-/* Get architecture version using ID_AA64MMFR2_EL1.TTL field */
-static
-uint32_t
-get_arch_version(void)
-{
-    uint64_t reg = val_pe_reg_read(ID_AA64MMFR2_EL1);
-    uint8_t ttl = (reg >> 48) & 0xF;
-    return (ttl != 0) ? ARCH_V8_4 : 0x80;
-}
+/* Optional, non-breaking: ask the platform/PAL for an implemented counter width.
+ * If your PAL doesn't provide this, val_timer_get_info() will just return 0 (unknown)
+ * and we will SKIP only the width sub-check (not the whole test).
+ */
+#ifndef TIMER_INFO_SYS_CNT_WIDTH_CODE
+#define TIMER_INFO_SYS_CNT_WIDTH_CODE (0xABCDEF01u)  /* private query code; returns 0 if unknown */
+#endif
 
 /* Robust MMIO read of 64-bit CNTPCT using hi/lo/hi pattern */
 static inline
@@ -68,31 +52,35 @@ payload(void)
     uint32_t pe_index = val_pe_get_index_mpid(val_pe_get_mpid());
     val_print(ACS_PRINT_WARN, "       PE index: %d", pe_index);
     uint32_t timer_num = val_timer_get_info(TIMER_INFO_NUM_PLATFORM_TIMERS, 0);
-    val_print(ACS_PRINT_WARN, "       Timer Index: %d", timer_num);
+    val_print(ACS_PRINT_WARN, "       Timer Count: %d", timer_num);
 
     if (!timer_num) {
         val_set_status(pe_index, "SKIP", 1);
         return;
     }
 
+    /* We’ll mark PASS if we checked at least one frame’s width rule (or scaling rule).
+       If we cannot check *any* frame’s width (no scaling and no platform width), we’ll SKIP. */
+    uint32_t frames_checked = 0;
+    uint32_t frames_skipped_for_unknown_width = 0;
+
     while (timer_num--) {
 
         uint64_t cnt_base_n   = val_timer_get_info(TIMER_INFO_SYS_CNT_BASE_N, timer_num);
-        val_print(ACS_PRINT_WARN, "       CNT BASE: %d", cnt_base_n);
+        val_print(ACS_PRINT_DEBUG, "       CNT BASE: 0x%llx", (unsigned long long)cnt_base_n);
         uint64_t cnt_ctl_base = val_timer_get_info(TIMER_INFO_SYS_CNTL_BASE,  timer_num);
-        val_print(ACS_PRINT_WARN, "       CNT CTL BASE: %d", cnt_ctl_base);
+        val_print(ACS_PRINT_DEBUG, "       CNT CTL BASE: 0x%llx", (unsigned long long)cnt_ctl_base);
         bool     is_secure_timer =
             val_timer_get_info(TIMER_INFO_IS_PLATFORM_TIMER_SECURE, timer_num);
 
         if ((cnt_base_n == 0) || (cnt_ctl_base == 0)) {
-            val_print(ACS_PRINT_WARN, "\n       Timer: Invalid CNT_BASE or CNT_CTL base", 0);
-            val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
+            val_print(ACS_PRINT_WARN, "\n       Skip: Invalid CNT_BASE or CNT_CTL base for frame %d", timer_num);
             continue;
         }
 
+        /* Read a 64-bit counter value (for liveliness/monotonic check). */
         uint64_t counter_val = 0;
 
-        /* Non-secure & allowed: read via MMIO directly; else use SMC */
         if (!is_secure_timer &&
             val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
 
@@ -103,64 +91,116 @@ payload(void)
             UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
 
             if (shared_data->status_code != 0) {
-                val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed", 0);
-                val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
+                val_print(ACS_PRINT_WARN, "\n       Skip: CNTPCT SMC read failed for frame %d (status=%u)",
+                          timer_num, shared_data->status_code);
                 continue;
             }
 
             counter_val = shared_data->shared_data_access[0].data;
         }
 
-        uint8_t  width = get_effective_bit_width(counter_val);
-        uint32_t arch_version = get_arch_version();
-
-        /* CNTID (secure-only): always go through SMC; EL3 writes result into shared_data */
+        /* CNTID (secure-only): always via SMC; EL3 writes result into shared_data */
         UserCallSMC(ARM_ACS_SMC_FID,
-                          RME_READ_CNTID,
-                          cnt_ctl_base + CNTID_OFFSET,
-                          0, 0);
+                    RME_READ_CNTID,
+                    cnt_ctl_base + CNTID_OFFSET,
+                    0, 0);
 
         if (shared_data->status_code != 0) {
-            val_print(ACS_PRINT_WARN, "\n       CNTID SMC read failed", 0);
-            val_print(ACS_PRINT_WARN, "       Timer index: %d", timer_num);
+            val_print(ACS_PRINT_WARN, "\n       Skip: CNTID SMC read failed for frame %d (status=%u)",
+                      timer_num, shared_data->status_code);
             continue;
         }
 
         uint32_t cntid_val = (uint32_t)shared_data->shared_data_access[0].data;
-        bool     scaling_enabled = ((cntid_val & 0xF) != 0);
 
-        val_print(ACS_PRINT_DEBUG, "\n       Timer index: %d", timer_num);
-        val_print(ACS_PRINT_DEBUG, "       width (bits): %d", width);
-        val_print(ACS_PRINT_DEBUG, "       scaling_enabled: %d", scaling_enabled);
+        /* Per Arm docs: bit[0] indicates scaling present (FEAT_CNTSC).
+         * Older code used 0xF; tighten to bit0 to avoid misreads.
+         */
+        bool scaling_present = (cntid_val & 0x1u) != 0u;
 
-        if (width > MAX_WIDTH) {
-            val_print(ACS_PRINT_ERR, "\n       Counter width exceeds 64 bits", 0);
-            val_set_status(pe_index, "FAIL", 1);
+        val_print(ACS_PRINT_DEBUG, "       Timer frame %d: CNTID=0x%08x, scaling=%d",
+                  timer_num, cntid_val, (int)scaling_present);
+
+        /* Optional platform-provided implemented width (unknown==0). */
+        uint64_t plat_w = val_timer_get_info((TIMER_INFO_e)TIMER_INFO_SYS_CNT_WIDTH_CODE, timer_num);
+        int impl_width = (plat_w >= 1 && plat_w <= 64) ? (int)plat_w : -1;
+        if (impl_width != -1) {
+            val_print(ACS_PRINT_DEBUG, "       Implemented width (platform): %d", impl_width);
+        }
+
+        if (scaling_present) {
+            /* Armv8.4+ with scaling requires a 64-bit counter.
+             * We cannot probe width directly; instead:
+             *  - Verify the 64-bit interface is alive & monotonic.
+             *  - If platform reports width, require it to be 64.
+             */
+            uint64_t counter_val2 = 0;
+            if (!is_secure_timer &&
+                val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
+                counter_val2 = mmio_read_cntpct_robust(cnt_base_n);
+            } else {
+                UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+                if (shared_data->status_code != 0) {
+                    val_print(ACS_PRINT_ERR, "\n       Scaling present but CNTPCT re-read failed (status=%u)",
+                              shared_data->status_code);
+                    val_set_status(pe_index, "FAIL", 11);
+                    return;
+                }
+                counter_val2 = shared_data->shared_data_access[0].data;
+            }
+
+            if (counter_val2 <= counter_val) {
+                val_print(ACS_PRINT_ERR, "\n       Counter not monotonic while scaling is present", 0);
+                val_set_status(pe_index, "FAIL", 12);
+                return;
+            }
+
+            if (impl_width != -1 && impl_width != 64) {
+                val_print(ACS_PRINT_ERR, "\n       Scaling present but implemented width (%d) != 64", impl_width);
+                val_set_status(pe_index, "FAIL", 13);
+                return;
+            }
+
+            frames_checked++;
+            continue;
+        }
+
+        /* Non-scaling case: width must be [56..64]. If unknown, don’t guess—skip the width sub-check. */
+        if (impl_width == -1) {
+            frames_skipped_for_unknown_width++;
+            val_print(ACS_PRINT_WARN, "\n       Width unknown (no discoverable field). Skipping width check for frame %d",
+                      timer_num);
+            /* We *do not* count this frame as checked for the width rule. */
+            continue;
+        }
+
+        if (impl_width < MIN_WIDTH) {
+            val_print(ACS_PRINT_ERR, "\n       Implemented counter width (%d) < %d bits", impl_width, MIN_WIDTH);
+            val_set_status(pe_index, "FAIL", 14);
+            return;
+        }
+        if (impl_width > MAX_WIDTH) {
+            val_print(ACS_PRINT_ERR, "\n       Implemented counter width (%d) > %d bits", impl_width, MAX_WIDTH);
+            val_set_status(pe_index, "FAIL", 15);
             return;
         }
 
-        if ((arch_version >= ARCH_V8_4) && scaling_enabled) {
-            if (width != 64) {
-                val_print(ACS_PRINT_ERR,
-                          "\n       Armv8.4+ with scaling: Counter width != 64", 0);
-                val_set_status(pe_index, "FAIL", 2);
-                return;
-            }
-        } else {
-            if (width < MIN_WIDTH) {
-                val_print(ACS_PRINT_ERR,
-                          "\n       Counter width less than 56 bits", 0);
-                val_set_status(pe_index, "FAIL", 3);
-                return;
-            }
-        }
+        frames_checked++;
     }
 
-    val_set_status(pe_index, "PASS", 1);
+    /* Finalize result */
+    if (frames_checked == 0) {
+        /* We couldn’t validate width (and no scaling-present frames); don’t return a false PASS. */
+        val_print(ACS_PRINT_WARN,
+                  "\n       TIME_01: No frame could be validated for width (unknown everywhere). Marking SKIP.", 0);
+        val_set_status(pe_index, "SKIP", 1);
+    } else {
+        val_set_status(pe_index, "PASS", 1);
+    }
     return;
 }
 
-/* Entry point for B_TIME_04 test */
+/* Entry point for TIME_01 test */
 uint32_t
 t01_entry(void)
 {

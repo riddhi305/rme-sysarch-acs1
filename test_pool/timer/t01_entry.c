@@ -33,7 +33,7 @@ get_effective_bit_width(uint64_t val)
     return width;
 }
 
-/* Get architecture version using ID_AA64MMFR2_EL1.TTL field (original heuristic) */
+/* Get architecture version using ID_AA64MMFR2_EL1.TTL field [51:48] */
 static
 uint32_t
 get_arch_version(void)
@@ -43,10 +43,10 @@ get_arch_version(void)
     return (ttl != 0) ? ARCH_V8_4 : 0x80;
 }
 
-/* Robust MMIO read of 64-bit CNTPCT using hi/lo/hi pattern */
-static inline
+/* MMIO read of 64-bit CNTPCT using hi/lo/hi pattern */
+static
 uint64_t
-mmio_read_cntpct_robust(uint64_t cnt_base_n)
+mmio_read_cntpct(uint64_t cnt_base_n)
 {
     uint32_t hi1 = val_mmio_read(cnt_base_n + CNTPCT_HIGHER);
     uint32_t lo  = val_mmio_read(cnt_base_n + CNTPCT_LOWER);
@@ -96,7 +96,7 @@ payload(void)
         if (!is_secure_timer &&
             val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
 
-            counter_val = mmio_read_cntpct_robust(cnt_base_n);
+            counter_val = mmio_read_cntpct(cnt_base_n);
 
         } else {
             /* Secure/inaccessible: read via SMC; EL3 writes result into shared_data */

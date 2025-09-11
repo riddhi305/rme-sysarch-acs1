@@ -457,7 +457,7 @@ val_mmio_write64_el3:
 // MMIO Read (64-bit)
 val_mmio_read64_el3:
     dsb ld             // Data Synchronization Barrier before read
-    ldr x0, [x0]       // Load 64-bit value from address (x0) into w0
+    ldr w0, [x0]       // Load 64-bit value from address (x0) into w0
     dsb ld             // Ensure read is completed
     ret
 

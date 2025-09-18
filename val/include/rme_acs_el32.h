@@ -46,7 +46,11 @@
 #define RME_READ_CNTID   0x16
 #define CNTPCT_LOWER     0x00
 #define CNTPCT_HIGHER    0x04
-#define CNTID_OFFSET     0x1C
+//#define CNTID_OFFSET     0x1C
+#define CNTCV_LOWER   0x08
+#define CNTCV_HIGHER  0x0C
+#define CNTCR_OFFSET  0x00
+#define CNTID_OFFSET  0x24
 
 /* General Defines used by tests */
 #define INIT_DATA   0x11

@@ -771,3 +771,21 @@ void val_mec_service(uint64_t arg0, uint64_t arg1, uint64_t arg2)
       break;
   }
 }
+
+/* === EL3-local helpers for timer reads === */
+uint64_t el3_read_cntcv_robust(uintptr_t base) {
+  uint32_t hi1 = mmio_read_32(base + CNTCV_HIGHER);
+  uint32_t lo  = mmio_read_32(base + CNTCV_LOWER);
+  uint32_t hi2 = mmio_read_32(base + CNTCV_HIGHER);
+  if (hi1 == hi2) return ((uint64_t)hi1 << 32) | lo;
+  uint32_t lo2 = mmio_read_32(base + CNTCV_LOWER);
+  return ((uint64_t)hi2 << 32) | lo2;
+}
+
+uint32_t el3_read_cntid(uintptr_t cntctl_base) {
+  return mmio_read_32(cntctl_base + CNTID_OFFSET);
+}
+
+/* asm helpers to place return value in x0 as well */
+extern void smc_set_retval_u64(uint64_t x);
+extern void smc_set_retval_u32(uint32_t w);

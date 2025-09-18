@@ -297,42 +297,31 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       arg0 = modify_desc(arg0, CIPAE_NSE_BIT, 1, 1);
       cmo_cipae(arg0);
       break;
-      case RME_READ_CNTPCT: 
-      /* arg0: base address of the counter block (system counter frame)
-       * Result: 64-bit CNTPCT stored in shared_data->shared_data_access[0].data
-       * Robust hi/lo/hi sequence to avoid rollover.
-       */
-      uintptr_t base = (uintptr_t)arg0;
-      uint32_t hi1 = mmio_read_32(base + CNTPCT_HIGHER);
-      uint32_t lo  = mmio_read_32(base + CNTPCT_LOWER);
-      uint32_t hi2 = mmio_read_32(base + CNTPCT_HIGHER);
-      uint64_t full;
-      if (hi1 == hi2) {
-        full = ((uint64_t)hi1 << 32) | lo;
-      } else {
-        uint32_t lo2 = mmio_read_32(base + CNTPCT_LOWER);
-        full = ((uint64_t)hi2 << 32) | lo2;
-      }
-      INFO("EL3: RME READ CNTPCT: 0x%lx\n", (unsigned long)full);
+    case RME_READ_CNTPCT:
+      /* arg0: base address of the counter frame (CNTBaseN) */
+      INFO("EL3: RME READ CNTPCT frame = 0x%lx\n", (unsigned long)arg0);
+      uint64_t full = el3_read_cntcv_robust((uintptr_t)arg0);
+      INFO("EL3: CNTCV (64-bit) = 0x%lx\n", (unsigned long)full);
       if (mapped) {
         shared_data->shared_data_access[0].data = full;
         shared_data->status_code = 0;
         shared_data->error_code = 0;
         shared_data->error_msg[0] = '\0';
       }
+      smc_set_retval_u64(full);
       break;
     case RME_READ_CNTID: 
-      /* arg0: address of secure CNTID register (CNTCTL base + CNTID offset)
-       * Result: 32-bit CNTID stored in shared_data->shared_data_access[0].data
-       */
-      uint32_t cntid = mmio_read_32((uintptr_t)arg0);
-      INFO("EL3: RME READ CNTID: 0x%x\n", cntid);
+      /* arg0: base address of CNTCTL block; EL3 adds CNTID_OFFSET */
+      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)arg0);
+      uint32_t cntid = el3_read_cntid((uintptr_t)arg0);
+      INFO("EL3: CNTID = 0x%x\n", cntid);
       if (mapped) {
-        shared_data->shared_data_access[0].data = (uint64_t)cntid; // store as u64
+        shared_data->shared_data_access[0].data = (uint64_t)cntid;
         shared_data->status_code = 0;
-        shared_data->error_code = 0;
+        shared_data->error_code  = 0;
         shared_data->error_msg[0] = '\0';
       }
+      smc_set_retval_u32(cntid);
       break;
     default:
       if (mapped) {

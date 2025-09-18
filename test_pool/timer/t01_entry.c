@@ -1,6 +1,7 @@
-/*The architecture of the system counter of the Generic Timer mandates that the counter must be at least 56
-bits, and at most 64 bits. From Armv8.4, for systems that implement counter scaling, the minimum becomes
-64 bits.*/
+/* The architecture of the system counter of the Generic Timer mandates that the counter
+ * must be at least 56 bits, and at most 64 bits. From Armv8.4, for systems that implement
+ * counter scaling, the minimum becomes 64 bits.
+ */
 
 #include <stdbool.h>
 
@@ -20,7 +21,7 @@ bits, and at most 64 bits. From Armv8.4, for systems that implement counter scal
 #define MAX_WIDTH 64
 #define ARCH_V8_4 0x84
 
-/* Count number of significant bits in a 64-bit value (original logic) */
+/* Count number of significant bits in a 64-bit value */
 static
 uint8_t
 get_effective_bit_width(uint64_t val)
@@ -39,25 +40,46 @@ uint32_t
 get_arch_version(void)
 {
     uint64_t reg = val_pe_reg_read(ID_AA64MMFR2_EL1);
-    uint8_t ttl = (uint8_t)((reg >> 48) & 0xF);
+    uint8_t ttl = (reg >> 48) & 0xF;
+
+    val_print(ACS_PRINT_DEBUG, "\n       ID_AA64MMFR2_EL1 = 0x%lx", (unsigned long)reg);
+    val_print(ACS_PRINT_DEBUG, "       TTL (bits[51:48]) = 0x%x", ttl);
+
     return (ttl != 0) ? ARCH_V8_4 : 0x80;
 }
 
-/* MMIO read of 64-bit CNTPCT using hi/lo/hi pattern */
+/* Robust MMIO read of 64-bit CNTCV using hi/lo/hi pattern */
 static
 uint64_t
-mmio_read_cntpct(uint64_t cnt_base_n)
+mmio_read_cntcv(uint64_t cnt_base_n)
 {
-    uint32_t hi1 = val_mmio_read(cnt_base_n + CNTPCT_HIGHER);
-    uint32_t lo  = val_mmio_read(cnt_base_n + CNTPCT_LOWER);
-    uint32_t hi2 = val_mmio_read(cnt_base_n + CNTPCT_HIGHER);
+    uint64_t addr_hi = cnt_base_n + CNTCV_HIGHER;
+    uint64_t addr_lo = cnt_base_n + CNTCV_LOWER;
 
-    if (hi1 == hi2)
-        return (((uint64_t)hi1 << 32) | lo);
-    else {
-        uint32_t lo2 = val_mmio_read(cnt_base_n + CNTPCT_LOWER);
-        return (((uint64_t)hi2 << 32) | lo2);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI addr = 0x%lx", (unsigned long)addr_hi);
+    uint32_t hi1 = val_mmio_read(addr_hi);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI val  = 0x%x", hi1);
+
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO addr = 0x%lx", (unsigned long)addr_lo);
+    uint32_t lo  = val_mmio_read(addr_lo);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO val  = 0x%x", lo);
+
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI addr = 0x%lx", (unsigned long)addr_hi);
+    uint32_t hi2 = val_mmio_read(addr_hi);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI val2 = 0x%x", hi2);
+
+    uint64_t result;
+    if (hi1 == hi2) {
+        result = (((uint64_t)hi1 << 32) | lo);
+    } else {
+        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO addr = 0x%lx", (unsigned long)addr_lo);
+        uint32_t lo2 = val_mmio_read(addr_lo);
+        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO val2 = 0x%x", lo2);
+        result = (((uint64_t)hi2 << 32) | lo2);
     }
+
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV (64-bit) = 0x%lx", (unsigned long)result);
+    return result;
 }
 
 /* Main test payload */
@@ -85,8 +107,14 @@ payload(void)
         bool     is_secure_timer =
             val_timer_get_info(TIMER_INFO_IS_PLATFORM_TIMER_SECURE, timer_num);
 
+        val_print(ACS_PRINT_DEBUG, "\n       --- Timer index = %d", timer_num);
+        val_print(ACS_PRINT_DEBUG, "       CNTBaseN  = 0x%lx", (unsigned long)cnt_base_n);
+        val_print(ACS_PRINT_DEBUG, "       CNTCTL    = 0x%lx", (unsigned long)cnt_ctl_base);
+        val_print(ACS_PRINT_DEBUG, "       secure?   = %d",    is_secure_timer);
+
         if ((cnt_base_n == 0) || (cnt_ctl_base == 0)) {
-            val_print(ACS_PRINT_WARN, "\n       Skip: Invalid CNT_BASE or CNT_CTL base for frame %d", timer_num);
+            val_print(ACS_PRINT_WARN, "\n       Timer: Invalid CNT_BASE or CNT_CTL base", 0);
+            val_print(ACS_PRINT_WARN, "       Timer index (invalid) = %d", timer_num);
             continue;
         }
 
@@ -96,42 +124,47 @@ payload(void)
         if (!is_secure_timer &&
             val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
 
-            counter_val = mmio_read_cntpct(cnt_base_n);
+            counter_val = mmio_read_cntcv(cnt_base_n);
 
         } else {
             /* Secure/inaccessible: read via SMC; EL3 writes result into shared_data */
-            UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+            (void)UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
 
+            val_print(ACS_PRINT_DEBUG, "       SMC status_code = 0x%lx",
+                      (unsigned long)shared_data->status_code);
             if (shared_data->status_code != 0) {
-                val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed (status=%u)", shared_data->status_code);
-                val_print(ACS_PRINT_WARN, "       Timer frame index: %d", timer_num);
+                val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed", 0);
+                val_print(ACS_PRINT_WARN, "       Timer index (SMC fail) = %d", timer_num);
                 continue;
             }
 
             counter_val = shared_data->shared_data_access[0].data;
+            val_print(ACS_PRINT_DEBUG, "       [SMC] CNTCV (64-bit) = 0x%lx",
+                      (unsigned long)counter_val);
         }
 
         uint8_t  width = get_effective_bit_width(counter_val);
+        val_print(ACS_PRINT_DEBUG, "       Effective width (bits) = %d", width);
+
         uint32_t arch_version = get_arch_version();
+        val_print(ACS_PRINT_DEBUG, "       Derived arch version code = 0x%x", arch_version);
 
-        /* CNTID (secure-only): always go through SMC; EL3 writes result into shared_data */
-        UserCallSMC(ARM_ACS_SMC_FID,
-                    RME_READ_CNTID,
-                    cnt_ctl_base + CNTID_OFFSET,
-                    0, 0);
+        /* CNTID (secure-only): go through SMC; EL3 writes result into shared_data */
+        (void)UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTID, cnt_ctl_base, 0, 0);
 
+        val_print(ACS_PRINT_DEBUG, "       SMC status_code = 0x%lx",
+                  (unsigned long)shared_data->status_code);
         if (shared_data->status_code != 0) {
-            val_print(ACS_PRINT_WARN, "\n       CNTID SMC read failed (status=%u)", shared_data->status_code);
-            val_print(ACS_PRINT_WARN, "       Timer frame index: %d", timer_num);
+            val_print(ACS_PRINT_WARN, "\n       CNTID SMC read failed", 0);
+            val_print(ACS_PRINT_WARN, "       Timer index (SMC fail) = %d", timer_num);
             continue;
         }
 
         uint32_t cntid_val = (uint32_t)shared_data->shared_data_access[0].data;
-        bool     scaling_enabled = ((cntid_val & 0xF) != 0);
+        val_print(ACS_PRINT_DEBUG, "       CNTID raw = 0x%x", cntid_val);
 
-        val_print(ACS_PRINT_DEBUG, "       Timer frame index: %d", timer_num);
-        val_print(ACS_PRINT_DEBUG, "       observed width (bits): %d", width);
-        val_print(ACS_PRINT_DEBUG, "       scaling_enabled: %d", (uint32_t)scaling_enabled);
+        bool scaling_enabled = ((cntid_val & 0xF) != 0);
+        val_print(ACS_PRINT_DEBUG, "       scaling_enabled = %d", scaling_enabled);
 
         if (width > MAX_WIDTH) {
             val_print(ACS_PRINT_ERR, "\n       Counter width exceeds 64 bits", 0);
@@ -141,13 +174,15 @@ payload(void)
 
         if ((arch_version >= ARCH_V8_4) && scaling_enabled) {
             if (width != 64) {
-                val_print(ACS_PRINT_ERR, "\n       Armv8.4+ with scaling: Counter width != 64", 0);
+                val_print(ACS_PRINT_ERR,
+                          "\n       Armv8.4+ with scaling: Counter width != 64", 0);
                 val_set_status(pe_index, "FAIL", 2);
                 return;
             }
         } else {
             if (width < MIN_WIDTH) {
-                val_print(ACS_PRINT_ERR, "\n       Counter width less than 56 bits", 0);
+                val_print(ACS_PRINT_ERR,
+                          "\n       Counter width less than 56 bits", 0);
                 val_set_status(pe_index, "FAIL", 3);
                 return;
             }
@@ -158,7 +193,7 @@ payload(void)
     return;
 }
 
-/* Entry point for TIME_01 test */
+/* Entry point for B_TIME_01 test */
 uint32_t
 t01_entry(void)
 {

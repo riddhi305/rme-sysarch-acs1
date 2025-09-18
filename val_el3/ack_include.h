@@ -309,8 +309,7 @@ void cmo_cipae(uint64_t PA);
 uint32_t val_smmu_set_rlm_ste_mecid(smmu_master_attributes_t master_attr, uint32_t mecid);
 bool val_smmu_supports_mec(uint64_t smmu_base);
 uint32_t val_smmu_get_mecidw(uint64_t smmu_base);
-// uint32_t val_read_cntpct_el3(uint64_t cnt_base_n, uint64_t *out);
-// uint32_t val_read_cntid_el3(uint64_t cntid_addr, uint32_t *out);
-
+uint64_t el3_read_cntcv_robust(uintptr_t base);
+uint32_t el3_read_cntid(uintptr_t cntctl_base);
 
 #endif //__ASSEMBLER__

@@ -320,9 +320,9 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       break;
     case RME_READ_CNTID:
       /* arg0: base address of CNTCTL block */
-      uintptr_t base = (uintptr_t)arg0;
-      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)base);
-      uint32_t cntid = el3_read_cntid(base);
+      uintptr_t cntid = (uintptr_t)arg0;
+      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)cntid);
+      uint32_t cntid = el3_read_cntid(cntid);
       INFO("EL3: CNTID = 0x%x\n", cntid);
       /* Return via shared buffer only (no smc_set_retval_*) */
       if (mapped) {

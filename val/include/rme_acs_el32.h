@@ -49,8 +49,11 @@
 //#define CNTID_OFFSET     0x1C
 #define CNTCV_LOWER   0x08
 #define CNTCV_HIGHER  0x0C
-#define CNTCR_OFFSET  0x00
+//#define CNTCR_OFFSET  0x00
 #define CNTID_OFFSET  0x24
+#define CNTCR_OFFSET   0x000u     /* Control register */
+#define CNTCR_EN       (1u << 0)  /* Enable system counter */
+#define CNTCR_HDBG     (1u << 1)  /* Halt on debug */
 
 /* General Defines used by tests */
 #define INIT_DATA   0x11

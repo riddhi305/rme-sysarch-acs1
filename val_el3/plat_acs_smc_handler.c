@@ -343,3 +343,13 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       break;
   }
 }
+
+static inline el3_syscounter_enable(uintptr_t cntctl_base) {
+  uint32_t cntcr = mmio_read_32(cntctl_base + CNTCR_OFFSET);
+  /* bit0: EN, bit1: HDBG (keep running in debug) */
+  cntcr |= (1u << 0) | (1u << 1);
+  mmio_write_32(cntctl_base + CNTCR_OFFSET, cntcr);
+}
+
+extern void smc_set_retval_u64(uint64_t x);
+extern void smc_set_retval_u32(uint32_t w);

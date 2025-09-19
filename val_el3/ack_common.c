@@ -772,32 +772,6 @@ void val_mec_service(uint64_t arg0, uint64_t arg1, uint64_t arg2)
   }
 }
 
-// /* === EL3-local helpers for timer reads === */
-// uint64_t el3_read_cntcv_robust(uintptr_t base) {
-//   uint32_t hi1 = val_mmio_read_el3(base + CNTCV_HIGHER);
-//   uint32_t lo  = val_mmio_read_el3(base + CNTCV_LOWER);
-//   uint32_t hi2 = val_mmio_read_el3(base + CNTCV_HIGHER);
-//   if (hi1 == hi2) return ((uint64_t)hi1 << 32) | lo;
-//   uint32_t lo2 = val_mmio_read_el3(base + CNTCV_LOWER);
-//   return ((uint64_t)hi2 << 32) | lo2;
-// }
-
-// uint32_t el3_read_cntid(uintptr_t cntctl_base) {
-//   return val_mmio_read_el3(cntctl_base + CNTID_OFFSET);
-// }
-
-// /* asm helpers to place return value in x0 as well */
-// extern void smc_set_retval_u64(uint64_t x);
-// extern void smc_set_retval_u32(uint32_t w);
-
-
-void el3_syscounter_enable(uintptr_t cntctl_base) {
-  uint32_t cntcr = mmio_read_32(cntctl_base + CNTCR_OFFSET);
-  /* bit0: EN, bit1: HDBG (keep running in debug) */
-  cntcr |= (1u << 0) | (1u << 1);
-  mmio_write_32(cntctl_base + CNTCR_OFFSET, cntcr);
-}
-
 uint64_t el3_read_cntcv_robust(uintptr_t cntctl_base) {
   uint32_t hi1 = val_mmio_read_el3(cntctl_base + CNTCV_HIGHER);
   uint32_t lo  = val_mmio_read_el3(cntctl_base + CNTCV_LOWER);

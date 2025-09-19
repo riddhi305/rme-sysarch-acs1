@@ -784,7 +784,3 @@ uint64_t el3_read_cntcv_robust(uintptr_t cntctl_base) {
 uint32_t el3_read_cntid(uintptr_t cntctl_base) {
   return val_mmio_read_el3(cntctl_base + CNTID_OFFSET);
 }
-
-/* asm helpers to place return value in x0 as well */
-extern void smc_set_retval_u64(uint64_t x);
-extern void smc_set_retval_u32(uint32_t w);

@@ -297,38 +297,41 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       arg0 = modify_desc(arg0, CIPAE_NSE_BIT, 1, 1);
       cmo_cipae(arg0);
       break;
-    case RME_READ_CNTPCT:
+        case RME_READ_CNTPCT:
       /* arg0: CNTCTL base address (we read CNTCV here) */
-      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)arg0);
-      el3_syscounter_enable((uintptr_t)arg0);
+      uintptr_t base = (uintptr_t)arg0;
+      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)base);
+      /* Inline enable of the system counter: set EN | HDBG in CNTCR */
       {
-        uint64_t full = el3_read_cntcv_robust((uintptr_t)arg0);
-        INFO("EL3: CNTCV (64-bit) = 0x%lx\n", (unsigned long)full);
-        if (mapped) {
-          shared_data->shared_data_access[0].data = full;
-          shared_data->status_code = 0;
-          shared_data->error_code = 0;
-          shared_data->error_msg[0] = '\0';
-        }
-        smc_set_retval_u64(full);
+        uint32_t cntcr = *(volatile uint32_t *)(base + CNTCR_OFFSET);
+        cntcr |= (CNTCR_EN | CNTCR_HDBG);
+        *(volatile uint32_t *)(base + CNTCR_OFFSET) = cntcr;
+      }
+      /* Robust 64-bit read of CNTCV */
+      uint64_t full = el3_read_cntcv_robust(base);
+      INFO("EL3: CNTCV (64-bit) = 0x%lx\n", (unsigned long)full);
+      /* Return via shared buffer only (no smc_set_retval_*) */
+      if (mapped) {
+        shared_data->shared_data_access[0].data = full;
+        shared_data->status_code = 0;
+        shared_data->error_code  = 0;
+        shared_data->error_msg[0] = '\0';
       }
       break;
     case RME_READ_CNTID:
       /* arg0: base address of CNTCTL block */
-      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)arg0);
-      {
-        uint32_t cntid = el3_read_cntid((uintptr_t)arg0);
-        INFO("EL3: CNTID = 0x%x\n", cntid);
-        if (mapped) {
-          shared_data->shared_data_access[0].data = (uint64_t)cntid;
-          shared_data->status_code = 0;
-          shared_data->error_code  = 0;
-          shared_data->error_msg[0] = '\0';
-        }
-        smc_set_retval_u32(cntid);
+      uintptr_t base = (uintptr_t)arg0;
+      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)base);
+      uint32_t cntid = el3_read_cntid(base);
+      INFO("EL3: CNTID = 0x%x\n", cntid);
+      /* Return via shared buffer only (no smc_set_retval_*) */
+      if (mapped) {
+        shared_data->shared_data_access[0].data = (uint64_t)cntid;
+        shared_data->status_code = 0;
+        shared_data->error_code  = 0;
+        shared_data->error_msg[0] = '\0';
       }
       break;
-
     default:
       if (mapped) {
         shared_data->status_code = 0xFFFFFFFF;
@@ -343,13 +346,3 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       break;
   }
 }
-
-static inline el3_syscounter_enable(uintptr_t cntctl_base) {
-  uint32_t cntcr = mmio_read_32(cntctl_base + CNTCR_OFFSET);
-  /* bit0: EN, bit1: HDBG (keep running in debug) */
-  cntcr |= (1u << 0) | (1u << 1);
-  mmio_write_32(cntctl_base + CNTCR_OFFSET, cntcr);
-}
-
-extern void smc_set_retval_u64(uint64_t x);
-extern void smc_set_retval_u32(uint32_t w);

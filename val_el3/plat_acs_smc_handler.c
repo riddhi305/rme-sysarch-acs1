@@ -298,31 +298,37 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
       cmo_cipae(arg0);
       break;
     case RME_READ_CNTPCT:
-      /* arg0: base address of the counter frame (CNTBaseN) */
-      INFO("EL3: RME READ CNTPCT frame = 0x%lx\n", (unsigned long)arg0);
-      uint64_t full = el3_read_cntcv_robust((uintptr_t)arg0);
-      INFO("EL3: CNTCV (64-bit) = 0x%lx\n", (unsigned long)full);
-      if (mapped) {
-        shared_data->shared_data_access[0].data = full;
-        shared_data->status_code = 0;
-        shared_data->error_code = 0;
-        shared_data->error_msg[0] = '\0';
-      }
-      smc_set_retval_u64(full);
-      break;
-    case RME_READ_CNTID: 
-      /* arg0: base address of CNTCTL block; EL3 adds CNTID_OFFSET */
+      /* arg0: CNTCTL base address (we read CNTCV here) */
       INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)arg0);
-      uint32_t cntid = el3_read_cntid((uintptr_t)arg0);
-      INFO("EL3: CNTID = 0x%x\n", cntid);
-      if (mapped) {
-        shared_data->shared_data_access[0].data = (uint64_t)cntid;
-        shared_data->status_code = 0;
-        shared_data->error_code  = 0;
-        shared_data->error_msg[0] = '\0';
+      el3_syscounter_enable((uintptr_t)arg0);
+      {
+        uint64_t full = el3_read_cntcv_robust((uintptr_t)arg0);
+        INFO("EL3: CNTCV (64-bit) = 0x%lx\n", (unsigned long)full);
+        if (mapped) {
+          shared_data->shared_data_access[0].data = full;
+          shared_data->status_code = 0;
+          shared_data->error_code = 0;
+          shared_data->error_msg[0] = '\0';
+        }
+        smc_set_retval_u64(full);
       }
-      smc_set_retval_u32(cntid);
       break;
+    case RME_READ_CNTID:
+      /* arg0: base address of CNTCTL block */
+      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)arg0);
+      {
+        uint32_t cntid = el3_read_cntid((uintptr_t)arg0);
+        INFO("EL3: CNTID = 0x%x\n", cntid);
+        if (mapped) {
+          shared_data->shared_data_access[0].data = (uint64_t)cntid;
+          shared_data->status_code = 0;
+          shared_data->error_code  = 0;
+          shared_data->error_msg[0] = '\0';
+        }
+        smc_set_retval_u32(cntid);
+      }
+      break;
+
     default:
       if (mapped) {
         shared_data->status_code = 0xFFFFFFFF;

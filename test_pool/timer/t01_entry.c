@@ -48,37 +48,37 @@ get_arch_version(void)
     return (ttl != 0) ? ARCH_V8_4 : 0x80;
 }
 
-/* Robust MMIO read of 64-bit CNTCV using hi/lo/hi pattern */
+/* Robust MMIO read of 64-bit CNTPCT from CNTBaseN (frame) using hi/lo/hi */
 static
 uint64_t
-mmio_read_cntcv(uint64_t cnt_base_n)
+mmio_read_cntpct_frame(uint64_t cnt_base_n)
 {
-    uint64_t addr_hi = cnt_base_n + CNTCV_HIGHER;
-    uint64_t addr_lo = cnt_base_n + CNTCV_LOWER;
+    uint64_t addr_hi = cnt_base_n + CNTPCT_HIGHER;
+    uint64_t addr_lo = cnt_base_n + CNTPCT_LOWER;
 
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI addr = 0x%lx", (unsigned long)addr_hi);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_HI addr = 0x%lx", (unsigned long)addr_hi);
     uint32_t hi1 = val_mmio_read(addr_hi);
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI val  = 0x%x", hi1);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_HI val  = 0x%x", hi1);
 
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO addr = 0x%lx", (unsigned long)addr_lo);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_LO addr = 0x%lx", (unsigned long)addr_lo);
     uint32_t lo  = val_mmio_read(addr_lo);
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO val  = 0x%x", lo);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_LO val  = 0x%x", lo);
 
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI addr = 0x%lx", (unsigned long)addr_hi);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_HI addr = 0x%lx", (unsigned long)addr_hi);
     uint32_t hi2 = val_mmio_read(addr_hi);
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_HI val2 = 0x%x", hi2);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_HI val2 = 0x%x", hi2);
 
     uint64_t result;
     if (hi1 == hi2) {
         result = (((uint64_t)hi1 << 32) | lo);
     } else {
-        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO addr = 0x%lx", (unsigned long)addr_lo);
+        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_LO addr = 0x%lx", (unsigned long)addr_lo);
         uint32_t lo2 = val_mmio_read(addr_lo);
-        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV_LO val2 = 0x%x", lo2);
+        val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT_LO val2 = 0x%x", lo2);
         result = (((uint64_t)hi2 << 32) | lo2);
     }
 
-    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTCV (64-bit) = 0x%lx", (unsigned long)result);
+    val_print(ACS_PRINT_DEBUG, "       [MMIO] CNTPCT (64-bit) = 0x%lx", (unsigned long)result);
     return result;
 }
 
@@ -120,20 +120,20 @@ payload(void)
 
         uint64_t counter_val = 0;
 
-        /* Non-secure & allowed: read via MMIO directly; else use SMC */
+        /* Non-secure & allowed: read via MMIO directly (CNTPCT@frame); else use SMC (CNTCV@CNTCTL) */
         if (!is_secure_timer &&
             val_timer_skip_if_cntbase_access_not_allowed(timer_num) != ACS_STATUS_SKIP) {
 
-            counter_val = mmio_read_cntcv(cnt_base_n);
+            counter_val = mmio_read_cntpct_frame(cnt_base_n);
 
         } else {
-            /* Secure/inaccessible: read via SMC; EL3 writes result into shared_data */
-            (void)UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_base_n, 0, 0);
+            /* Secure/inaccessible: read CNTCV via SMC using CNTCTL base */
+            (void)UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTPCT, cnt_ctl_base, 0, 0);
 
             val_print(ACS_PRINT_DEBUG, "       SMC status_code = 0x%lx",
                       (unsigned long)shared_data->status_code);
             if (shared_data->status_code != 0) {
-                val_print(ACS_PRINT_WARN, "\n       CNTPCT SMC read failed", 0);
+                val_print(ACS_PRINT_WARN, "\n       CNTPCT/CNTCV SMC read failed", 0);
                 val_print(ACS_PRINT_WARN, "       Timer index (SMC fail) = %d", timer_num);
                 continue;
             }
@@ -143,15 +143,11 @@ payload(void)
                       (unsigned long)counter_val);
         }
 
-        uint8_t  width = get_effective_bit_width(counter_val);
-        val_print(ACS_PRINT_DEBUG, "       Effective width (bits) = %d", width);
-
+        /* Determine arch version and scaling state (via CNTID from CNTCTL) */
         uint32_t arch_version = get_arch_version();
         val_print(ACS_PRINT_DEBUG, "       Derived arch version code = 0x%x", arch_version);
 
-        /* CNTID (secure-only): go through SMC; EL3 writes result into shared_data */
         (void)UserCallSMC(ARM_ACS_SMC_FID, RME_READ_CNTID, cnt_ctl_base, 0, 0);
-
         val_print(ACS_PRINT_DEBUG, "       SMC status_code = 0x%lx",
                   (unsigned long)shared_data->status_code);
         if (shared_data->status_code != 0) {
@@ -165,6 +161,14 @@ payload(void)
 
         bool scaling_enabled = ((cntid_val & 0xF) != 0);
         val_print(ACS_PRINT_DEBUG, "       scaling_enabled = %d", scaling_enabled);
+
+        /* Compute a permissive, architecturally-valid width */
+        uint8_t measured = get_effective_bit_width(counter_val);
+        uint8_t min_required = ((arch_version >= ARCH_V8_4) && scaling_enabled) ? 64 : MIN_WIDTH;
+        uint8_t width = measured;
+        if (width < min_required) width = min_required;
+        if (width > 64) width = 64;
+        val_print(ACS_PRINT_DEBUG, "       Effective width (bits) = %d", width);
 
         if (width > MAX_WIDTH) {
             val_print(ACS_PRINT_ERR, "\n       Counter width exceeds 64 bits", 0);

@@ -318,18 +318,35 @@ void plat_arm_acs_smc_handler(uint64_t services, uint64_t arg0, uint64_t arg1, u
         shared_data->error_msg[0] = '\0';
       }
       break;
-    case RME_READ_CNTID:
-      /* arg0: base address of CNTCTL block */
-      uintptr_t cntid = (uintptr_t)arg0;
-      INFO("EL3: CNTCTL base = 0x%lx\n", (unsigned long)cntid);
-      uint32_t cntid = el3_read_cntid(cntid);
-      INFO("EL3: CNTID = 0x%x\n", cntid);
-      /* Return via shared buffer only (no smc_set_retval_*) */
-      if (mapped) {
-        shared_data->shared_data_access[0].data = (uint64_t)cntid;
-        shared_data->status_code = 0;
-        shared_data->error_code  = 0;
-        shared_data->error_msg[0] = '\0';
+    case RME_READ_CNTID: 
+      uintptr_t base = (uintptr_t)arg0;
+      uint32_t cntid = el3_read_cntid(base);
+      if ((cntid & 0xF) == 0) {
+        /* FEAT_CNTSC not implemented (RES0) */
+        if (mapped) {
+          shared_data->shared_data_access[0].data = 0;
+          shared_data->status_code = 0;         /* success path, but feature absent */
+          shared_data->error_code  = 0;
+          shared_data->error_msg[0] = '\0';
+        }
+        INFO("CNTID: FEAT_CNTSC not implemented (RES0)\n");
+      } 
+      else if ((cntid & 0xF) == 0x1) {
+        if (mapped) {
+          shared_data->shared_data_access[0].data = (uint64_t)cntid;
+          shared_data->status_code = 0;
+          shared_data->error_code  = 0;
+          shared_data->error_msg[0] = '\0';
+        }
+        INFO("CNTID: CNTSC implemented (0x%x)\n", cntid & 0xF);
+      } 
+      else {
+        /* Reserved value: treat as error or as not implemented per your policy */
+        shared_data->status_code = 1;
+        const char *msg = "EL3: CNTID returned reserved value";
+        int i = 0; while (msg[i] && i < sizeof(shared_data->error_msg) - 1) 
+            shared_data->error_msg[i] = msg[i], i++;
+        shared_data->error_msg[i] = '\0';
       }
       break;
     default:
